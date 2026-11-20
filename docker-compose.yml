@@ -46,16 +46,6 @@ services:
         condition: service_healthy
     labels:
       note: "after DDL run: curl -X POST http://localhost:3000/reload"
-  
-  swagger:
-    image: swaggerapi/swagger-ui:latest
-    container_name: pgstore-swagger
-    environment:
-      BASE_URL: /docs
-    ports:
-      - "8082:8080"
-    depends_on:
-      - api
 
 volumes:
   pgstore_data:
