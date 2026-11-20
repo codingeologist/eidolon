@@ -108,20 +108,20 @@ Arrow keys `/` click to select, `r` for refresh, `q` to quit. The TUI reads imag
 
 > *(the hard way)*
 
-1. Upload only through `/rpc/store_objects`. A plain `POST /objects` with a base64 string stores the text characters, not the decoded image. Resulting in silent double-encoding and roughly 33% size inflation. The RPC decodes and checksums the bytes.
+1. Upload only through `/rpc/store_object`. A plain `POST /objects` with a base64 string stores the text characters, not the decoded image. This results in silent double-encoding and roughly 33% size inflation. The RPC decodes and checksums the bytes.
 2. PostgREST returns `bytea` as Postgres hex (`\x...`), not base64. Clients must hex-decode not base64-decode.
 3. Content types are trusted, not validated. Currently, the store will file a WebP as `image/jpeg`. Need to verify the image bytes.
 4. Base64 inflates every upload by roughly 33% and is not streamed end-to-end. Fine for small-to-medium images, but a known limit of the gateway and a reason for the FastAPI roadmap item.
-5. The anonymous role is a superuser. This stack is for local use. Do not expose PostgREST or Postgres to a network without adding authentication and a least-privilege route.
+5. The anonymous role is a superuser. This stack is for local use. Do not expose PostgREST or Postgres to a network without adding authentication and a least-privilege role.
 
 ---
 
 ## Roadmap
 
-- [] FastAPI service to replace the PostgREST: raw binary upload and download (multipart, streaming) with `index/html` served from the application. PostgREST is a working placeholder, not a long-term API. Do not build integrations against `rpc/store_object` that cannot be migrated.
-- [] Magic-byte validation against the declared `content_type`.
-- [] `uv` dependency management and `app.py` containerisation.
-- [] Benchmarks: `bytea` vs `pg_largeobjects` at at least 50 and 200Mb payload sizes.
+- [ ] FastAPI service to replace the PostgREST: raw binary upload and download (multipart, streaming) with `index/html` served from the application. PostgREST is a working placeholder, not a long-term API. Do not build integrations against `rpc/store_object` that cannot be migrated.
+- [ ] Magic-byte validation against the declared `content_type`.
+- [ ] `uv` dependency management and `app.py` containerisation.
+- [ ] Benchmarks: `bytea` vs `pg_largeobjects` at least 50 and 200Mb payload sizes.
 
 ---
 
