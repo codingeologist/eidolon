@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PgStore Browser</title>
+<style>
+  :root { font-family: system-ui, sans-serif; color: #111827; background: #0f172a; }
+  body { margin: 0; }
+  .wrap { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+  h1 { font-size: 1.4rem; color: #e2e8f0; }
+  h1 span { color: #38bdf8; }
+  .card { background: #1e293b; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1rem; color: #cbd5e1; }
+  label { display: block; font-size: .8rem; color: #94a3b8; margin-bottom: .25rem; }
+  select, input[type=text] { width: 100%; box-sizing: border-box; padding: .45rem; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; }
+  button { margin-top: .6rem; padding: .5rem 1rem; border-radius: 6px; border: none; background: #0284c7; color: white; cursor: pointer; }
+  button:hover { background: #0369a1; }
+  button:disabled { background: #475569; cursor: not-allowed; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid #334155; }
+  th { color: #94a3b8; font-weight: 500; }
+  td a { color: #38bdf8; cursor: pointer; text-decoration: underline; }
+  .msg { font-size: .8rem; margin: .5rem 0; color: #fbbf24; min-height: 1em; }
+  .ok { color: #4ade80; }
+  #preview img { max-width: 100%; border-radius: 8px; margin-top: .5rem; }
+  .row { display: flex; gap: 1rem; }
+  .row > * { flex: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Pg<span>Store</span> Browser</h1>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label>Bucket</label>
+        <select id="bucket" onchange="loadObjects()"><option value="">Loading...</option></select>
+      </div>
+      <div>
+        <label>API base URL</label>
+        <input type="text" id="apiBase" value="http://localhost:3000" onchange="loadBuckets()" />
+      </div>
+    </div>
+    <div class="msg" id="msg"></div>
+  </div>
+
+  <div class="card">
+    <label>Upload file into this bucket</label>
+    <input type="file" id="file" />
+    <label style="margin-top:.5rem">Object key (blank = use file name)</label>
+    <input type="text" id="key" placeholder="uploads/example/page2.jpg" />
+    <button id="uploadBtn" onclick="upload()">Upload</button>
+  </div>
+
+  <div class="card">
+    <label>Objects</label>
+    <table>
+      <thead><tr><th>Key</th><th>Size</th><th>Type</th><th>Created</th><th></th></tr></thead>
+      <tbody id="objects"><tr><td colspan="5">Select a bucket...</td></tr></tbody>
+    </table>
+  </div>
+
+  <div class="card" id="preview" style="display:none">
+    <label id="previewLabel">Preview</label>
+    <div id="previewBody"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const msg = (m, ok) => { $("msg").textContent = m; $("msg").className = "msg" + (ok ? " ok" : ""); };
+const api = () => $("apiBase").value.replace(/\/$/, "");
+
+// Escape untrusted text (keys, bucket names, content types) before putting it in innerHTML.
+const esc = v => String(v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+async function req(path, opts) {
+  let r;
+  try { r = await fetch(api() + path, opts); }
+  catch (e) {
+    // fetch rejects only on network failure or a CORS block, never on an HTTP error status.
+    const err = new Error(`${e.message} (${api()}). Check the API is running and CORS allows this origin.`);
+    err.network = true;
+    throw err;
+  }
+  if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
+  const ct = r.headers.get("content-type") || "";
+  return ct.includes("json") ? r.json() : r.text();
+}
+
+function fmtBytes(n) {
+  if (n < 1024) return n + " B";
+  if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1048576).toFixed(1) + " MB";
+}
+
+async function loadBuckets() {
+  try {
+    const bs = await req("/buckets?select=id,name&order=name");
+    $("bucket").innerHTML = bs.map(b => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join("");
+    await loadObjects();
+  } catch (e) { msg((e.network ? "Cannot reach PostgREST: " : "Load failed: ") + e.message); }
+}
+
+async function loadObjects() {
+  const b = $("bucket").value;
+  if (!b) return;
+  try {
+    const os = await req(`/objects?bucket_id=eq.${b}&select=key,size_bytes,content_type,created_at&order=created_at.desc`);
+    $("objects").innerHTML = os.map((o, i) => `
+      <tr>
+        <td>${esc(o.key)}</td>
+        <td>${fmtBytes(o.size_bytes)}</td>
+        <td>${esc(o.content_type)}</td>
+        <td>${new Date(o.created_at).toLocaleString()}</td>
+        <td><a onclick="fetchObject(${i})">view</a></td>
+      </tr>`).join("") || "<tr><td colspan=5>No objects yet</td></tr>";
+    $("objects")._data = os;
+  } catch (e) { msg("Load failed: " + e.message); }
+}
+
+async function upload() {
+  const f = $("file").files[0];
+  if (!f) { msg("Pick a file first."); return; }
+  const bucketSel = $("bucket");
+  const bucketName = bucketSel.options[bucketSel.selectedIndex].text;
+  const key = $("key").value.trim() || f.name;
+  const b64 = await new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result.slice(r.result.indexOf(",") + 1)); // strip "data:...;base64,"
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(f);
+  }).catch(e => { msg("Could not read file: " + e.message); return null; });
+  if (b64 === null) return;
+  $("uploadBtn").disabled = true;
+  try {
+    const out = await req("/rpc/store_object", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ p_bucket: bucketName, p_key: key, p_ct: f.type || "application/octet-stream", p_b64: b64 })
+    });
+    msg(`Stored "${key}" (${fmtBytes((Array.isArray(out) ? out[0] : out).size_bytes)})`, true);
+    $("key").value = "";
+    await loadObjects();
+  } catch (e) { msg("Upload failed: " + e.message); }
+  $("uploadBtn").disabled = false;
+}
+
+async function fetchObject(i) {
+  const o = $("objects")._data[i];
+  const b = $("bucket").value;
+  try {
+    const rows = await req(`/objects?bucket_id=eq.${b}&key=eq.${encodeURIComponent(o.key)}&select=data`);
+    const hex = rows[0].data;
+    if (!hex.startsWith("\\x")) throw new Error("unexpected payload format");
+    const bytes = new Uint8Array((hex.length - 2) / 2);
+    for (let j = 0; j < bytes.length; j++) bytes[j] = parseInt(hex.substr(2 + j * 2, 2), 16);
+    const blob = new Blob([bytes], { type: o.content_type });
+    if (window._previewUrl) URL.revokeObjectURL(window._previewUrl);
+    const url = window._previewUrl = URL.createObjectURL(blob);
+    const fname = esc(o.key.split('/').pop());
+    $("preview").style.display = "";
+    $("previewLabel").textContent = o.key;
+    $("previewBody").innerHTML = o.content_type.startsWith("image")
+      ? `<img src="${url}" /> <a href="${url}" download="${fname}">download</a>`
+      : `<a href="${url}" download="${fname}">download (${fmtBytes(bytes.length)})</a>`;
+    msg(`Loaded ${fmtBytes(bytes.length)} from store`, true);
+  } catch (e) { msg("Fetch failed: " + e.message); }
+}
+
+loadBuckets();
+</script>
+</body>
+</html>
