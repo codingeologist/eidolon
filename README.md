@@ -1,6 +1,22 @@
-# Postgres Image Store
+# Eidolon
+
+_**From image to archive**_
+
+---
+
+## Rationale
+
+_**Eidolon** (εἴδωλον)_, from the Greek _**eidos** (εἶδος: "form, that which is seen")_, is the ancient word for a **visible image**: a likeness, a phantom, a dream-figure, the face of a person as it survives in a picture or in memory. In _**Homer**_, the dead appear to the living as *eidola*, images of themselves that speak; and it is an *eidolon* og _**Helen**_, a phantom image woven by _**Hera**_, that travels to _**Troy**_ while the woman herself remains in Egpyt. The oldest story in literature about a faithful record of a thing standing in for the thing itself.
+
+For _**Plato**_, the distinction ran deeper. The *eidos* is the Form: the true, unchanging essence of the thing. The *eidolon* is its image, the copy that lives in a world of appearances, one step removed from the truth. The shadows on the wall of the cave in the _**Republic**_. We dwell, Plato says, among *eidola*: we know things through their pictures.
+
+That is precisely what an object store is. Every image ever stored is an *eidolon* in the oldest sense: not the record, specimen, place, or person, but its faithful likeness, kept so the original can be somewhere else, or be gone. And like Plato's cave, an archive forces the question that this project takes seriously: *"what do you owe a copy?"* The answer built into this schema is: its form. The *eidos* of every stored image; its key, type, size, checksum, is held in the same place as the image itself. So a likeness can never drift from what it claims to be. An *eidolon* without a record is a phantom; an *eidolon* catalogued is an archive.
+
+The culmination of the two is the rationale for this tool. _**Postgres**_ holds both the image and its form at once: the *eidolon* in `bytea`, the *eidos* in the columns around it. No external store, no shadow tables, no architecture one step removed. Where S3 keeps an image in one world and its truth in another, **Eidolon** keeps the copy and its essence in a single row. In myth, *eidola* were unreliable by nature. With a schema, a trigger, and a checksum, they don't have to be.
 
 A minimal image object store built on a single PostgreSQL instance serving the buckets, object metadata, and the image bytes. No S3-compatible service required, in the spirit of [Postgres For Everything](https://postgresforeverything.com)
+
+![Plato's Cave Wall](docs/hero_image.jpg)
 
 ---
 
