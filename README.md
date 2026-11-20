@@ -112,8 +112,8 @@ curl -X DELETE "http://localhost:3000/objects?key=eq.pets/cat.jpg"
 ```bash
 uv venv venv
 source venv/bin/activate
-uv pip install psycopg[binary] pillow textual textual-image
-PG_DSN=postgresql://pgstore:pgstore-dev@localhost:5432/pgstore python app.py
+uv pip install -e .
+eidolon
 ```
 
 Arrow keys `/` click to select, `r` for refresh, `q` to quit. The TUI reads image blobs directly over SQL and renders previews with Pillow. Non-image payloads show a preview error.

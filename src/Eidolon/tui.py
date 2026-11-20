@@ -1,7 +1,7 @@
 """
-Postgres Object Store browser (terminal UI).
+Eidolon TUI: Postgres Object Store browser (terminal UI).
 
-Lists objects from the `objects` / `buckets` tables and previews images.
+Lists objects from the `objects`/`buckets` tables and previews the images.
 Connection string: PG_DSN env var (default matches docker-compose.yml).
 """
 from __future__ import annotations
@@ -30,7 +30,7 @@ ORDER BY b.name, o.key
 LIMIT %s OFFSET %s
 """
 
-BLOB_SQL = "SELECT data FROM objects WHERE id = %s"
+BLOB_SQL = "SELECT data from objects WHERE id = %s"
 
 # --------------------------------------------------------------------------
 # Data layer (sync psycopg; swap for a pool if this grows)
@@ -48,7 +48,7 @@ def fetch_blob(conn: psycopg.Connection, object_id) -> Optional[PILImage.Image]:
         row = cur.fetchone()
     if row is None:
         return None
-    return PILImage.open(io.BytesIO(bytes(row[0]))).convert("RGB")
+    return PILImage.open(io.BytesIO(bytes(row[0])))
 
 
 # --------------------------------------------------------------------------
@@ -61,17 +61,17 @@ class ObjectTable(DataTable):
     def on_mount(self) -> None:
         self.cursor_type = "row"
         self.zebra_stripes = True
-        self.add_columns("Bucket", "Key", "Type", "Bytes", "Created")
+        self.add_columns("Bucket","Key","Type","Bytes","Created")
 
 
 class MetaPanel(Static):
-    """Metadata summary for the selected object."""
+    """Metadata summary for the selected object"""
 
 
 class ObjectBrowserApp(App[None]):
-    TITLE = "Postgres Object Store Browser"
+    TITLE = "Eidolon: Postgres Object Store"
     CSS = """
-    #body { height: 1fr; }
+#body { height: 1fr; }
     #table-pane { width: 60%; }
     #detail-pane { width: 40%; }
     #image-pane { height: 1fr; border: round $primary; }
@@ -80,26 +80,30 @@ class ObjectBrowserApp(App[None]):
 
     BINDINGS = [
         ("q", "quit", "Quit"),
-        ("r", "refresh", "Refresh"),
+        ("r", "refresh", "Refresh")
     ]
 
     def __init__(self) -> None:
         super().__init__()
         self._conn: psycopg.Connection | None = None
         self._offset = 0
-        self._meta: dict[str, tuple] = {}  # row key (object id) -> full row
+        self._meta: dict[str, tuple] = {} # row key (object id) -> full row
+
 
     # ---- lifecycle ----
 
+
     def on_mount(self) -> None:
         self._bootstrap()
+
 
     def _bootstrap(self) -> None:
         try:
             self._conn = psycopg.connect(PG_DSN, autocommit=True)
             self._load_page()
-        except Exception as exc:  # surface DB errors instead of dying silently
-            self.query_one("#image-pane", Static).update(f"[b red]DB error:[/] {exc}")
+        except Exception as ex: # surface DB errors
+            self.query_one("#image-pane", Static).update(f"[b red]DB error:[/] {ex}")
+
 
     def _load_page(self) -> None:
         assert self._conn is not None
@@ -111,6 +115,7 @@ class ObjectBrowserApp(App[None]):
             self._meta[str(object_id)] = row
             table.add_row(bucket, key, ctype, str(size), f"{created:%Y-%m-%d %H:%M}",
                           key=str(object_id))
+
 
     # ---- events ----
 
@@ -144,6 +149,7 @@ class ObjectBrowserApp(App[None]):
         pane.update("")
         pane.mount(TImage(img))
 
+
     # ---- bindings ----
 
     def action_refresh(self) -> None:
@@ -162,5 +168,6 @@ class ObjectBrowserApp(App[None]):
         yield Footer()
 
 
-if __name__ == "__main__":
+def tuiapp():
     ObjectBrowserApp().run()
+
