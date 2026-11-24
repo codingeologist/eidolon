@@ -21,15 +21,15 @@ A minimal image object store built on a single PostgreSQL instance serving the b
 ---
 
 ```txt
-┌────────────┐  REST (JSON + base64)  ┌───────────┐
-│ index.html │ ─────────────────────▶ │ PostgREST │   ──┐
-└────────────┘                        └───────────┘     │
-┌────────────┐   SQL (psycopg)                          ▼
-│   app.py   │ ──────────────────────────────▶ ┌────────────┐
-└────────────┘   (goes straight to Postgres)   │  Postgres  │
-                                               │  buckets   │
-                                               │  objects   │
-                                               └────────────┘
+┌────────────┐   HTTP (raw bytes + JSON)   ┌──────────┐
+│ index.html │ ◀─────────────────────────▶ │ FastAPI  │ ──┐
+└────────────┘     (served by the API)     └──────────┘   │
+┌────────────┐   SQL (psycopg)                            ▼
+│    TUI     │ ────────────────────────────────▶ ┌────────────┐
+└────────────┘   (goes straight to Postgres)     │  Postgres  │
+                                                 │  buckets   │
+                                                 │  objects   │
+                                                 └────────────┘
 ```
 
 ---
@@ -44,8 +44,9 @@ Postgres can act as a catalogue (object metadata) in relational tables and an ob
 
 - `buckets`: named containers using the AWS S3 style.
 - `objects`: one row per object, holding `key`, `content_type`, `size_bytes`, `checksum_sha256`, `status`, as well as the `bytea` payload. (`bucket_id` and `key` are unique).
-- Payloads are stored as `bytea`. TOAST handles transparent compression and out-of-line storage. `size_bytes` maintained by trigger.
-- `store_object()` performs the base64 to binary decode, computes the SHA256 checksum, and upserts on key conflict.
+- Payloads are stored as `bytea`, out-of-line by TOAST. The column uses `STORAGE EXTERNAL` (no compression: images are already compressed) so the API can read a large object in cheap slices. `size_bytes` is maintained by trigger.
+- `put_object()` takes the raw bytes (and the SHA256 computed by the API), and upserts on key conflict. It backs `PUT /buckets/{bucket}/objects/{key}`.
+- `store_object()` (base64 via PostgREST) is **legacy**: it is still in the schema but nothing uses it, and it will be removed.
 - Full schema in `initdb/01-schema.sql`.
 
 ---
@@ -56,22 +57,18 @@ Postgres can act as a catalogue (object metadata) in relational tables and an ob
 docker compose up -d
 ```
 
-The schema and the `store_object` function are created automatically on first start (empty volume only using `docker compose down -v` for a clean slate).
+This starts Postgres and the FastAPI service. The schema is created automatically on first start (empty volume only; use `docker compose down -v` for a clean slate). Open <http://localhost:8000> for the web UI, or <http://localhost:8000/docs> for the interactive API docs.
 
 Add a bucket and upload an image:
 
 ```bash
 # create a bucket
-curl -X POST http://localhost:3000/buckets \
+curl -X POST http://localhost:8000/buckets \
   -H "Content-Type: application/json" -d '{"name":"my-images"}'
 
-# upload (base64 payload via RPC; jq --rawfile avoids shell argument limits)
-base64 -w0 cat.jpg > /tmp/payload.b64
-jq -n --rawfile b64 /tmp/payload.b64 \
-   '{p_bucket:"my-images", p_key:"pets/cat.jpg", p_ct:"image/jpeg", p_b64:$b64}' \
-   > /tmp/payload.json
-curl -X POST http://localhost:3000/rpc/store_object \
-     -H "Content-Type: application/json" -d @/tmp/payload.json
+# upload: the request body is the raw file, the type comes from the Content-Type header
+curl -X PUT http://localhost:8000/buckets/my-images/objects/pets/cat.jpg \
+     -H "Content-Type: image/jpeg" --data-binary @cat.jpg
 ```
 
 See [Usage](#Usage) for listing, head-style metadata and deletion
@@ -84,26 +81,46 @@ Three interchangeable methods to interact with the object store:
 
 | Interface            | Method                         | Usage                                     |
 |----------------------|--------------------------------|-------------------------------------------|
-| Rest API (PostgREST) | `http://localhost:3000`        | `curl`, scripting, web UI                 |
-| Web browser UI       | open `index.html` in a browser | image catalogue browsing, upload, preview |
-| Terminal UI (TUI)    | `python app.py`                | fast local inspection and image preview   |
+| REST API (FastAPI)   | `http://localhost:8000`        | `curl`, scripting; docs at `/docs`        |
+| Web browser UI       | `http://localhost:8000`        | image catalogue browsing, upload, preview |
+| Terminal UI (TUI)    | `eidolon`                      | fast local inspection and image preview   |
 
 ---
 
 ## REST Endpoints
 
+| Method   | Path                                  | Purpose                                                        |
+|----------|---------------------------------------|----------------------------------------------------------------|
+| `GET`    | `/buckets`                            | list buckets                                                   |
+| `POST`   | `/buckets`                            | create a bucket (`{"name": "..."}`); 409 if it exists           |
+| `DELETE` | `/buckets/{bucket}`                   | delete a bucket; 409 if not empty unless `?force=true`          |
+| `GET`    | `/buckets/{bucket}/objects`           | list object metadata (`?prefix=`, `?limit=`, `?offset=`)        |
+| `PUT`    | `/buckets/{bucket}/objects/{key}`     | upload raw bytes (create or overwrite); returns metadata        |
+| `GET`    | `/buckets/{bucket}/objects/{key}`     | download the bytes (`?meta=true` for JSON metadata instead)     |
+| `HEAD`   | `/buckets/{bucket}/objects/{key}`     | headers only: type, size, `ETag` (the SHA256)                   |
+| `DELETE` | `/buckets/{bucket}/objects/{key}`     | delete an object                                                |
+| `GET`    | `/healthz`                            | database connectivity check                                     |
+
+Keys may contain `/` (`pets/cat.jpg`). Bucket names are lowercase letters, digits, `.`, `-` and `_`.
+
 ```bash
 # list buckets
-curl http://localhost:3000/buckets?select=id,name
+curl http://localhost:8000/buckets
 
-# "head object": metadata only, never the payload
-curl "http://localhost:3000/objects?key=eq.pets/cat.jpg&select=key,size_bytes,content_type,checksum_sha256,status,created_at"
+# list objects (metadata only, the payload is never included)
+curl "http://localhost:8000/buckets/my-images/objects?prefix=pets/"
+
+# "head object"
+curl -I http://localhost:8000/buckets/my-images/objects/pets/cat.jpg
+
+# download
+curl -o cat.jpg http://localhost:8000/buckets/my-images/objects/pets/cat.jpg
 
 # delete
-curl -X DELETE "http://localhost:3000/objects?key=eq.pets/cat.jpg"
+curl -X DELETE http://localhost:8000/buckets/my-images/objects/pets/cat.jpg
 ```
 
-**Always restrict `select=` on `objects/`. Otherwise every response ships the binary payload of every matching row.** *i.e.*, a full-library download in one call.
+Uploads are capped at `MAX_UPLOAD_BYTES` (default 50 MiB; `413` above that), because the body is buffered in memory before the insert. Only raster images are served inline; every other type (including SVG) is sent as a download with a restrictive `Content-Security-Policy`, since uploads are served from the same origin as the UI.
 
 ---
 
@@ -124,17 +141,20 @@ Arrow keys `/` click to select, `r` for refresh, `q` to quit. The TUI reads imag
 
 > *(the hard way)*
 
-1. Upload only through `/rpc/store_object`. A plain `POST /objects` with a base64 string stores the text characters, not the decoded image. This results in silent double-encoding and roughly 33% size inflation. The RPC decodes and checksums the bytes.
-2. PostgREST returns `bytea` as Postgres hex (`\x...`), not base64. Clients must hex-decode not base64-decode.
+1. Upload raw bytes with `PUT`. The old base64 route stored whatever text it was given if you used a plain `POST /objects`, which silently double-encoded the image and inflated it by about 33%. The API now takes the bytes directly and checksums them.
+2. Postgres hands `bytea` back as hex (`\x...`). The old UI had to hex-decode it in JavaScript; the API streams the raw bytes with the right `Content-Type` instead.
 3. Content types are trusted, not validated. Currently, the store will file a WebP as `image/jpeg`. Need to verify the image bytes.
-4. Base64 inflates every upload by roughly 33% and is not streamed end-to-end. Fine for small-to-medium images, but a known limit of the gateway and a reason for the FastAPI roadmap item.
-5. The anonymous role is a superuser. This stack is for local use. Do not expose PostgREST or Postgres to a network without adding authentication and a least-privilege role.
+4. `bytea` cannot be streamed into Postgres, so an upload is buffered in memory (hence the size cap). Downloads are read in 1 MiB slices. Larger objects are a reason to benchmark large objects (see the roadmap).
+5. There is no authentication and the DB role is a superuser. This stack is for local use. The API port is published on `127.0.0.1` only; do not expose it or Postgres to a network without adding authentication and a least-privilege role.
 
 ---
 
 ## Roadmap
 
-- [ ] FastAPI service to replace the PostgREST: raw binary upload and download (multipart, streaming) with `index/html` served from the application. PostgREST is a working placeholder, not a long-term API. Do not build integrations against `rpc/store_object` that cannot be migrated.
+- [x] FastAPI service to replace PostgREST: raw binary upload and download, with `index.html` served from the application.
+- [ ] Remove the legacy `store_object()` SQL function.
+- [ ] Authentication and a least-privilege database role for the API.
+- [ ] Optional multipart upload route.
 - [ ] Magic-byte validation against the declared `content_type`.
 - [ ] `uv` dependency management and `app.py` containerisation.
 - [ ] Benchmarks: `bytea` vs `pg_largeobjects` at least 50 and 200Mb payload sizes.

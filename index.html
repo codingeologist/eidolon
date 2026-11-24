@@ -39,7 +39,7 @@
       </div>
       <div>
         <label>API base URL</label>
-        <input type="text" id="apiBase" value="http://localhost:3000" onchange="loadBuckets()" />
+        <input type="text" id="apiBase" value="" onchange="loadBuckets()" />
       </div>
     </div>
     <div class="msg" id="msg"></div>
@@ -71,6 +71,12 @@
 const $ = id => document.getElementById(id);
 const msg = (m, ok) => { $("msg").textContent = m; $("msg").className = "msg" + (ok ? " ok" : ""); };
 const api = () => $("apiBase").value.replace(/\/$/, "");
+// Served by the API itself -> same origin. Opened from file:// -> fall back to the default port.
+$("apiBase").value = location.protocol.startsWith("http") ? location.origin : "http://localhost:8000";
+
+// Encode each path segment but keep the "/" separators (object keys look like "pets/cat.jpg").
+const encKey = k => k.split("/").map(encodeURIComponent).join("/");
+const objUrl = (bucket, key) => `${api()}/buckets/${encodeURIComponent(bucket)}/objects/${encKey(key)}`;
 
 // Escape untrusted text (keys, bucket names, content types) before putting it in innerHTML.
 const esc = v => String(v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -97,17 +103,19 @@ function fmtBytes(n) {
 
 async function loadBuckets() {
   try {
-    const bs = await req("/buckets?select=id,name&order=name");
-    $("bucket").innerHTML = bs.map(b => `<option value="${esc(b.id)}">${esc(b.name)}</option>`).join("");
+    const bs = await req("/buckets");
+    $("bucket").innerHTML = bs.map(b => `<option value="${esc(b.name)}">${esc(b.name)}</option>`).join("");
     await loadObjects();
-  } catch (e) { msg((e.network ? "Cannot reach PostgREST: " : "Load failed: ") + e.message); }
+  } catch (e) { msg((e.network ? "Cannot reach the API: " : "Load failed: ") + e.message); }
 }
 
 async function loadObjects() {
   const b = $("bucket").value;
   if (!b) return;
   try {
-    const os = await req(`/objects?bucket_id=eq.${b}&select=key,size_bytes,content_type,created_at&order=created_at.desc`);
+    const page = await req(`/buckets/${encodeURIComponent(b)}/objects?limit=1000`);
+    const os = page.items;
+    if (page.has_more) msg("Showing the newest 1000 objects only.");
     $("objects").innerHTML = os.map((o, i) => `
       <tr>
         <td>${esc(o.key)}</td>
@@ -123,50 +131,36 @@ async function loadObjects() {
 async function upload() {
   const f = $("file").files[0];
   if (!f) { msg("Pick a file first."); return; }
-  const bucketSel = $("bucket");
-  const bucketName = bucketSel.options[bucketSel.selectedIndex].text;
+  const bucketName = $("bucket").value;
+  if (!bucketName) { msg("Select a bucket first."); return; }
   const key = $("key").value.trim() || f.name;
-  const b64 = await new Promise((res, rej) => {
-    const r = new FileReader();
-    r.onload = () => res(r.result.slice(r.result.indexOf(",") + 1)); // strip "data:...;base64,"
-    r.onerror = () => rej(r.error);
-    r.readAsDataURL(f);
-  }).catch(e => { msg("Could not read file: " + e.message); return null; });
-  if (b64 === null) return;
   $("uploadBtn").disabled = true;
   try {
-    const out = await req("/rpc/store_object", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ p_bucket: bucketName, p_key: key, p_ct: f.type || "application/octet-stream", p_b64: b64 })
+    // Raw bytes as the request body: no base64, no JSON wrapper.
+    const out = await req(`/buckets/${encodeURIComponent(bucketName)}/objects/${encKey(key)}`, {
+      method: "PUT",
+      headers: { "Content-Type": f.type || "application/octet-stream" },
+      body: f
     });
-    msg(`Stored "${key}" (${fmtBytes((Array.isArray(out) ? out[0] : out).size_bytes)})`, true);
+    msg(`Stored "${key}" (${fmtBytes(out.size_bytes)})`, true);
     $("key").value = "";
     await loadObjects();
   } catch (e) { msg("Upload failed: " + e.message); }
   $("uploadBtn").disabled = false;
 }
 
-async function fetchObject(i) {
+function fetchObject(i) {
   const o = $("objects")._data[i];
-  const b = $("bucket").value;
-  try {
-    const rows = await req(`/objects?bucket_id=eq.${b}&key=eq.${encodeURIComponent(o.key)}&select=data`);
-    const hex = rows[0].data;
-    if (!hex.startsWith("\\x")) throw new Error("unexpected payload format");
-    const bytes = new Uint8Array((hex.length - 2) / 2);
-    for (let j = 0; j < bytes.length; j++) bytes[j] = parseInt(hex.substr(2 + j * 2, 2), 16);
-    const blob = new Blob([bytes], { type: o.content_type });
-    if (window._previewUrl) URL.revokeObjectURL(window._previewUrl);
-    const url = window._previewUrl = URL.createObjectURL(blob);
-    const fname = esc(o.key.split('/').pop());
-    $("preview").style.display = "";
-    $("previewLabel").textContent = o.key;
-    $("previewBody").innerHTML = o.content_type.startsWith("image")
-      ? `<img src="${url}" /> <a href="${url}" download="${fname}">download</a>`
-      : `<a href="${url}" download="${fname}">download (${fmtBytes(bytes.length)})</a>`;
-    msg(`Loaded ${fmtBytes(bytes.length)} from store`, true);
-  } catch (e) { msg("Fetch failed: " + e.message); }
+  // The API streams the raw bytes with the right Content-Type, so the URL can be used directly.
+  // Non-image types (and SVG) are served as attachments, so the link downloads instead of rendering.
+  const url = objUrl($("bucket").value, o.key);
+  const fname = esc(o.key.split("/").pop());
+  $("preview").style.display = "";
+  $("previewLabel").textContent = o.key;
+  $("previewBody").innerHTML = o.content_type.startsWith("image/") && o.content_type !== "image/svg+xml"
+    ? `<img src="${esc(url)}" alt="${fname}" /> <a href="${esc(url)}" download="${fname}">download</a>`
+    : `<a href="${esc(url)}" download="${fname}">download (${fmtBytes(o.size_bytes)})</a>`;
+  msg(`Showing ${fmtBytes(o.size_bytes)} from store`, true);
 }
 
 loadBuckets();

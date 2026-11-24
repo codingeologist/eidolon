@@ -23,8 +23,17 @@ maintainers = [
 description = "From image to archive"
 readme = "README.md"
 
+[project.optional-dependencies]
+# FastAPI service (pinned to the versions it was tested against)
+api = [
+    "fastapi==0.165.0",
+    "uvicorn==0.54.0",
+    "psycopg-pool==3.3.3",
+]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [project.scripts]
 eidolon = "Eidolon.tui:tuiapp"
+eidolon-api = "Eidolon.api.main:run"

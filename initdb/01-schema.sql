@@ -25,6 +25,11 @@ CREATE TABLE objects (
     UNIQUE (bucket_id, key)                   -- S3-style uniqueness
 );
 
+-- Store payloads out-of-line but uncompressed: images are already compressed,
+-- so this makes substring(data FROM x FOR n) read only the TOAST chunks it needs
+-- (used by the API chunked download) instead of decompressing from byte 0 on every slice.
+ALTER TABLE objects ALTER COLUMN data SET STORAGE EXTERNAL;
+
 CREATE INDEX objects_by_bucket_idx ON objects (bucket_id, created_at DESC);
 
 -- Housekeeping function: auto-set size + updated_at, no app-side bookkeeping.
@@ -85,6 +90,57 @@ BEGIN
     INSERT INTO objects AS o (bucket_id, key, content_type, size_bytes, checksum_sha256, status, data)
     VALUES (v_bucket, p_key, COALESCE(NULLIF(p_ct, ''), 'application/octet-stream'),
             octet_length(v_data), encode(sha256(v_data), 'hex'), 'stored', v_data)
+    ON CONFLICT (bucket_id, key) DO UPDATE
+        SET content_type    = EXCLUDED.content_type,
+            checksum_sha256 = EXCLUDED.checksum_sha256,
+            status          = 'stored',
+            data            = EXCLUDED.data
+    RETURNING o.id, o.bucket_id, o.key, o.content_type, o.size_bytes,
+              o.checksum_sha256, o.status, o.created_at, o.updated_at;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Raw-bytes upsert for the FastAPI PUT /buckets/{bucket}/objects/{key:path} route.
+-- Same behaviour as store_object() but takes the decoded payload (bytea) directly, so no
+-- base64 round trip. The app can pass the sha256 it computed while reading the body;
+-- if p_sha256 is NULL it is computed here. store_object() is kept until PostgREST is retired.
+CREATE OR REPLACE FUNCTION put_object(
+    p_bucket text,
+    p_key    text,
+    p_ct     text DEFAULT 'application/octet-stream',
+    p_data   bytea DEFAULT NULL,
+    p_sha256 text DEFAULT NULL
+) RETURNS TABLE (
+    id              uuid,
+    bucket_id       uuid,
+    key             text,
+    content_type    text,
+    size_bytes      bigint,
+    checksum_sha256 text,
+    status          object_status,
+    created_at      timestamptz,
+    updated_at      timestamptz
+) AS $$
+#variable_conflict use_column
+DECLARE
+    v_bucket uuid;
+BEGIN
+    IF p_key IS NULL OR btrim(p_key) = '' THEN
+        RAISE EXCEPTION 'object key must not be empty' USING ERRCODE = '22023';
+    END IF;
+    IF p_data IS NULL THEN
+        RAISE EXCEPTION 'p_data (object bytes) is required' USING ERRCODE = '22023';
+    END IF;
+
+    SELECT b.id INTO v_bucket FROM buckets b WHERE b.name = p_bucket;
+    IF v_bucket IS NULL THEN
+        RAISE EXCEPTION 'bucket "%" does not exist', p_bucket USING ERRCODE = 'P0002';
+    END IF;
+
+    RETURN QUERY
+    INSERT INTO objects AS o (bucket_id, key, content_type, size_bytes, checksum_sha256, status, data)
+    VALUES (v_bucket, p_key, COALESCE(NULLIF(p_ct, ''), 'application/octet-stream'),
+            octet_length(p_data), COALESCE(p_sha256, encode(sha256(p_data), 'hex')), 'stored', p_data)
     ON CONFLICT (bucket_id, key) DO UPDATE
         SET content_type    = EXCLUDED.content_type,
             checksum_sha256 = EXCLUDED.checksum_sha256,
