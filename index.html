@@ -3,96 +3,285 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Eidolon: from image to archive</title>
+<title>Eidolon Photos</title>
 <style>
-  :root { font-family: system-ui, sans-serif; color: #111827; background: #0f172a; }
-  body { margin: 0; }
-  .wrap { max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
-  h1 { font-size: 1.4rem; color: #e2e8f0; }
-  h1 span { color: #38bdf8; }
-  .card { background: #1e293b; border-radius: 10px; padding: 1rem 1.25rem; margin-bottom: 1rem; color: #cbd5e1; }
-  label { display: block; font-size: .8rem; color: #94a3b8; margin-bottom: .25rem; }
-  select, input[type=text] { width: 100%; box-sizing: border-box; padding: .45rem; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #e2e8f0; }
-  button { margin-top: .6rem; padding: .5rem 1rem; border-radius: 6px; border: none; background: #0284c7; color: white; cursor: pointer; }
-  button:hover { background: #0369a1; }
-  button:disabled { background: #475569; cursor: not-allowed; }
-  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-  th, td { text-align: left; padding: .45rem .5rem; border-bottom: 1px solid #334155; }
-  th { color: #94a3b8; font-weight: 500; }
-  td a { color: #38bdf8; cursor: pointer; text-decoration: underline; }
-  .msg { font-size: .8rem; margin: .5rem 0; color: #fbbf24; min-height: 1em; }
-  .ok { color: #4ade80; }
-  #preview img { max-width: 100%; border-radius: 8px; margin-top: .5rem; }
-  .row { display: flex; gap: 1rem; }
-  .row > * { flex: 1; }
+  :root {
+    color-scheme: dark;
+    --bg: #202124; --surface: #292a2d; --surface2: #35363a; --line: #3c4043;
+    --text: #e8eaed; --muted: #9aa0a6; --accent: #8ab4f8; --accent-bg: #394457;
+    --danger: #f28b82; --radius: 12px; --side: 256px; --top: 64px;
+    font-family: "Google Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); }
+  a { color: inherit; text-decoration: none; }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  [hidden] { display: none !important; }
+  svg { width: 24px; height: 24px; fill: currentColor; flex: none; }
+
+  /* ---------- layout ---------- */
+  .app { display: grid; grid-template-columns: var(--side) 1fr; grid-template-rows: var(--top) 1fr; min-height: 100vh; }
+  .top { grid-column: 1 / -1; display: flex; align-items: center; gap: .75rem; padding: 0 1rem;
+         border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; }
+  .brand { font-size: 1.35rem; min-width: calc(var(--side) - 2rem - 40px); }
+  .brand span { color: var(--accent); }
+  .menu { display: none; }
+  .search { flex: 1; max-width: 640px; position: relative; }
+  .search svg { position: absolute; left: 12px; top: 50%; translate: 0 -50%; color: var(--muted); }
+  .search input { width: 100%; padding: .65rem 1rem .65rem 2.8rem; border-radius: 999px; border: 1px solid transparent; background: var(--surface); }
+  .search input:disabled { opacity: .5; }
+  .search input:focus { background: var(--surface2); outline: none; border-color: var(--accent); }
+
+  .side { padding: .75rem .5rem; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: .25rem;
+          position: sticky; top: var(--top); height: calc(100vh - var(--top)); overflow-y: auto; background: var(--bg); }
+  .nav { display: flex; align-items: center; gap: .9rem; padding: .6rem 1rem; border-radius: 999px; background: none; border: 0;
+         cursor: pointer; text-align: left; width: 100%; color: var(--text); }
+  .nav:hover { background: var(--surface); }
+  .nav[aria-current=page] { background: var(--accent-bg); color: var(--accent); }
+  .nav .label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nav-sep { margin: .5rem 1rem .25rem; font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  .conn { margin-top: auto; padding: 1rem; font-size: .75rem; color: var(--muted); }
+  .conn input { width: 100%; margin-top: .25rem; padding: .4rem .5rem; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); }
+
+  main { padding: 1rem 1.5rem 4rem; min-width: 0; outline: none; }
+  .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; margin-bottom: 1rem; }
+  .crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; font-size: 1.15rem; }
+  .crumbs a { padding: .25rem .6rem; border-radius: 999px; color: var(--muted); }
+  .crumbs a:hover { background: var(--surface); color: var(--text); }
+  .crumbs .sep { color: var(--muted); }
+  .crumbs [aria-current] { padding: .25rem .6rem; font-weight: 500; }
+  .actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+  h2 { font-size: .95rem; font-weight: 500; color: var(--muted); margin: 1.5rem 0 .6rem; }
+  .sub { color: var(--muted); font-size: .85rem; margin: -.5rem 0 0; }
+
+  /* ---------- buttons ---------- */
+  .btn { display: inline-flex; align-items: center; gap: .5rem; padding: .5rem 1rem; border-radius: 999px; border: 1px solid var(--line);
+         background: transparent; cursor: pointer; }
+  .btn:hover { background: var(--surface); }
+  .btn.primary { background: var(--accent); color: #0b1d3a; border-color: var(--accent); font-weight: 500; }
+  .btn.primary:hover { filter: brightness(1.1); }
+  .btn.danger { background: var(--danger); color: #3b0a07; border-color: var(--danger); font-weight: 500; }
+  .btn.ghost-danger { color: var(--danger); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn svg { width: 20px; height: 20px; }
+  .icon-btn { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; border: 0; background: transparent; cursor: pointer; }
+  .icon-btn:hover { background: rgba(255,255,255,.12); }
+
+  /* ---------- grids ---------- */
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 4px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 1rem; }
+  .tile { position: relative; aspect-ratio: 1; padding: 0; border: 0; background: var(--surface); cursor: pointer; overflow: hidden; display: block; width: 100%; }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .15s; }
+  .tile:hover img { transform: scale(1.04); }
+  .tile.file { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .5rem; padding: .75rem; color: var(--muted); font-size: .75rem; }
+  .tile.file span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .card, .folder { position: relative; border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+  .card > a, .folder > a { display: block; }
+  .cover { aspect-ratio: 4 / 3; background: var(--surface2); display: grid; place-items: center; color: var(--muted); overflow: hidden; }
+  .cover img { width: 100%; height: 100%; object-fit: cover; }
+  .cover svg { width: 48px; height: 48px; opacity: .6; }
+  .card .meta { padding: .7rem .9rem; }
+  .card .meta b, .folder .meta b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta small { color: var(--muted); }
+  .folders { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .75rem; }
+  .folder .cover { aspect-ratio: 16 / 9; }
+  .folder .meta { display: flex; align-items: center; gap: .6rem; padding: .6rem .8rem; }
+  .folder .meta div { min-width: 0; }
+  .folder .meta svg { color: var(--muted); }
+  .card:hover, .folder:hover { background: var(--surface2); }
+  .del { position: absolute; top: 6px; right: 6px; background: rgba(32,33,36,.8); opacity: 0; }
+  .folder:hover .del, .folder:focus-within .del { opacity: 1; }
+  @media (hover: none) { .del { opacity: 1; } }
+
+  .empty { border: 2px dashed var(--line); border-radius: var(--radius); padding: 3rem 1rem; text-align: center; color: var(--muted); margin-top: 1.5rem; }
+  .empty svg { width: 56px; height: 56px; opacity: .5; }
+  .empty p { margin: .5rem 0 1rem; }
+  .error { background: #3b2323; color: #f6c7c3; padding: 1rem; border-radius: var(--radius); }
+
+  /* ---------- drag overlay + toast ---------- */
+  .drop { position: fixed; inset: 0; background: rgba(32,33,36,.88); display: grid; place-items: center; z-index: 50;
+          font-size: 1.4rem; border: 3px dashed var(--accent); margin: 12px; border-radius: 20px; pointer-events: none; }
+  .toast { position: fixed; left: 50%; bottom: 1.5rem; translate: -50% 20px; background: #e8eaed; color: #202124; padding: .7rem 1.2rem; border-radius: 8px;
+           opacity: 0; pointer-events: none; transition: .2s; z-index: 80; max-width: min(90vw, 560px); white-space: pre-line; }
+  .toast.show { opacity: 1; translate: -50% 0; }
+  .toast.err { background: #f9dedc; color: #410e0b; }
+
+  /* ---------- dialogs ---------- */
+  dialog { border: 0; padding: 0; color: var(--text); }
+  dialog::backdrop { background: rgba(0,0,0,.6); }
+  #modal { background: var(--surface); border-radius: 16px; width: min(440px, 92vw); }
+  #modal form { padding: 1.5rem; display: flex; flex-direction: column; gap: .75rem; }
+  #modal h3 { margin: 0; font-weight: 400; font-size: 1.4rem; }
+  #modal p { margin: 0; color: var(--muted); }
+  #modal input { padding: .65rem .8rem; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); }
+  #modal .hint { color: var(--muted); font-size: .8rem; min-height: 1em; word-break: break-all; }
+  #modal .err { color: var(--danger); font-size: .85rem; min-height: 1em; }
+  #modal .foot { display: flex; justify-content: flex-end; gap: .5rem; }
+
+  .lb { width: 100vw; height: 100vh; max-width: none; max-height: none; background: #000; }
+  .lb[open] { display: grid; grid-template-columns: 1fr auto; grid-template-rows: 64px 1fr; }
+  .lb-bar { grid-column: 1 / -1; display: flex; align-items: center; gap: .25rem; padding: 0 .75rem; background: linear-gradient(#000a, transparent); z-index: 2; }
+  .lb-title { flex: 1; padding: 0 .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lb-stage { grid-row: 2; grid-column: 1; display: grid; place-items: center; min-height: 0; min-width: 0; padding: 0 64px 16px; }
+  .lb-stage img { max-width: 100%; max-height: 100%; object-fit: contain; }
+  .lb-nav { position: absolute; top: 50%; translate: 0 -50%; width: 48px; height: 48px; background: rgba(32,33,36,.7); z-index: 2; }
+  .lb-nav.prev { left: 8px; } .lb-nav.next { right: 8px; }
+  .lb[data-info] .lb-nav.next { right: 328px; }
+  .lb-info { grid-row: 2; grid-column: 2; width: 320px; background: var(--surface); padding: 1rem 1.25rem; overflow-y: auto; }
+  .lb-info h3 { margin: 0 0 1rem; font-weight: 400; }
+  .lb-info dt { color: var(--muted); font-size: .75rem; margin-top: .9rem; }
+  .lb-info dd { margin: .1rem 0 0; word-break: break-all; }
+  .nofile { display: grid; justify-items: center; gap: .75rem; color: var(--muted); }
+  .nofile svg { width: 72px; height: 72px; }
+
+  @media (max-width: 800px) {
+    .app { grid-template-columns: 1fr; }
+    .menu { display: grid; }
+    .brand { min-width: 0; }
+    .side { position: fixed; top: var(--top); left: 0; bottom: 0; width: 280px; height: auto; z-index: 20; translate: -100% 0; transition: translate .2s; box-shadow: 4px 0 24px #0008; }
+    .side.open { translate: 0 0; }
+    main { padding: .75rem .75rem 4rem; }
+    .grid { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
+    .lb[open] { grid-template-columns: 1fr; }
+    .lb-info { position: absolute; right: 0; top: 64px; bottom: 0; max-width: 85vw; z-index: 3; }
+    .lb[data-info] .lb-nav.next { right: 8px; }
+    .lb-stage { padding: 0 8px 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Eidolon<span> Image Archives</span> (Browser)</h1>
+<div class="app">
+  <header class="top">
+    <button class="icon-btn menu" id="menuBtn" aria-label="Toggle navigation" aria-controls="side" aria-expanded="false" data-icon="menu"></button>
+    <a class="brand" href="#/">Eidolon<span> Photos</span></a>
+    <form class="search" role="search" onsubmit="return false">
+      <span data-icon="search"></span>
+      <label class="sr" for="q">Search this album</label>
+      <input id="q" type="search" placeholder="Search this album" autocomplete="off" disabled />
+    </form>
+  </header>
 
-  <div class="card">
-    <div class="row">
-      <div>
-        <label>Bucket</label>
-        <select id="bucket" onchange="loadObjects()"><option value="">Loading...</option></select>
-      </div>
-      <div>
-        <label>API base URL</label>
-        <input type="text" id="apiBase" value="" onchange="loadBuckets()" />
-      </div>
+  <aside class="side" id="side">
+    <nav aria-label="Albums" style="display:contents">
+      <a class="nav" id="navHome" href="#/"><span data-icon="album"></span><span class="label">All albums</span></a>
+      <div class="nav-sep" id="albumSep" hidden>Albums</div>
+      <div id="albumNav"></div>
+    </nav>
+    <button class="nav" id="newAlbumSide" type="button"><span data-icon="add"></span><span class="label">New album</span></button>
+    <div class="conn">
+      <label for="apiBase">API base URL</label>
+      <input type="text" id="apiBase" />
     </div>
-    <div class="msg" id="msg"></div>
-  </div>
+  </aside>
 
-  <div class="card">
-    <label>Upload file into this bucket</label>
-    <input type="file" id="file" />
-    <label style="margin-top:.5rem">Object key (blank = use file name)</label>
-    <input type="text" id="key" placeholder="uploads/example/page2.jpg" />
-    <button id="uploadBtn" onclick="upload()">Upload</button>
-  </div>
-
-  <div class="card">
-    <label>Objects</label>
-    <table>
-      <thead><tr><th>Key</th><th>Size</th><th>Type</th><th>Created</th><th></th></tr></thead>
-      <tbody id="objects"><tr><td colspan="5">Select a bucket...</td></tr></tbody>
-    </table>
-  </div>
-
-  <div class="card" id="preview" style="display:none">
-    <label id="previewLabel">Preview</label>
-    <div id="previewBody"></div>
-  </div>
+  <main id="main" tabindex="-1"></main>
 </div>
 
+<input type="file" id="pickFiles" accept="image/*" multiple hidden />
+<input type="file" id="pickDir" webkitdirectory hidden />
+<div class="drop" id="dropOverlay" hidden>Drop photos or folders to upload</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<dialog id="modal" aria-labelledby="modalTitle">
+  <form id="modalForm" method="dialog" novalidate>
+    <h3 id="modalTitle"></h3>
+    <p id="modalMsg"></p>
+    <label class="sr" for="modalInput" id="modalLabel"></label>
+    <input id="modalInput" type="text" autocomplete="off" spellcheck="false" />
+    <div class="hint" id="modalHint"></div>
+    <div class="err" id="modalErr" role="alert"></div>
+    <div class="foot">
+      <button type="button" class="btn" id="modalCancel">Cancel</button>
+      <button type="submit" class="btn primary" id="modalOk">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog class="lb" id="lb" aria-label="Photo viewer">
+  <div class="lb-bar">
+    <button class="icon-btn" id="lbClose" aria-label="Close" data-icon="close"></button>
+    <div class="lb-title" id="lbTitle"></div>
+    <a class="icon-btn" id="lbDownload" aria-label="Download" data-icon="download"></a>
+    <button class="icon-btn" id="lbInfoBtn" aria-label="Info" aria-expanded="false" data-icon="info"></button>
+    <button class="icon-btn" id="lbDelete" aria-label="Delete" data-icon="delete"></button>
+  </div>
+  <button class="icon-btn lb-nav prev" id="lbPrev" aria-label="Previous photo" data-icon="left"></button>
+  <div class="lb-stage" id="lbStage"></div>
+  <button class="icon-btn lb-nav next" id="lbNext" aria-label="Next photo" data-icon="right"></button>
+  <aside class="lb-info" id="lbInfo" hidden aria-label="Photo details"></aside>
+</dialog>
+
 <script>
+"use strict";
+
+/* ===================== helpers ===================== */
 const $ = id => document.getElementById(id);
-const msg = (m, ok) => { $("msg").textContent = m; $("msg").className = "msg" + (ok ? " ok" : ""); };
+const KEEP = ".keep";            // zero-byte placeholder that makes an empty "folder" exist
+const PAGE = 1000, MAX_PAGES = 20, CARD_PROBE = 200;
+const DISPLAYABLE = /^image\/(jpeg|png|gif|webp|avif|bmp)$/;   // what <img> can safely render
+const EXT_TYPES = { jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif", webp: "image/webp",
+                    avif: "image/avif", bmp: "image/bmp", tif: "image/tiff", tiff: "image/tiff", heic: "image/heic", heif: "image/heif" };
+
+const ICONS = {
+  menu: "M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z",
+  search: "M15.5 14h-.79l-.28-.27A6.47 6.47 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z",
+  album: "M22 16V4c0-1.1-.9-2-2-2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2zm-11-4 2.03 2.71L16 11l4 5H8l3-4zM2 6v14c0 1.1.9 2 2 2h14v-2H4V6H2z",
+  add: "M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z",
+  close: "M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z",
+  download: "M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z",
+  info: "M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z",
+  delete: "M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z",
+  left: "M15.41 7.41 14 6l-6 6 6 6 1.41-1.41L10.83 12z",
+  right: "M10 6 8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z",
+  folder: "M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z",
+  newfolder: "M20 6h-8l-2-2H4c-1.11 0-1.99.89-1.99 2L2 18c0 1.11.89 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-1 8h-3v3h-2v-3h-3v-2h3V9h2v3h3v2z",
+  upload: "M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z",
+  file: "M6 2c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z",
+};
+// Static, trusted SVG strings only (never user data).
+const icon = name => { const s = document.createElement("span"); s.style.display = "contents";
+  s.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ICONS[name]}"/></svg>`; return s; };
+
+// Tiny DOM builder. Strings become text nodes, so user-controlled names can never inject markup.
+function h(tag, props = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) e.append(c);
+  return e;
+}
+
 const api = () => $("apiBase").value.replace(/\/$/, "");
-// Served by the API itself -> same origin. Opened from file:// -> fall back to the default port.
-$("apiBase").value = location.protocol.startsWith("http") ? location.origin : "http://localhost:8000";
+$("apiBase").value = localStorage.getItem("eidolon.api")
+  || (location.protocol.startsWith("http") ? location.origin : "http://localhost:8000");
 
-// Encode each path segment but keep the "/" separators (object keys look like "pets/cat.jpg").
 const encKey = k => k.split("/").map(encodeURIComponent).join("/");
-const objUrl = (bucket, key) => `${api()}/buckets/${encodeURIComponent(bucket)}/objects/${encKey(key)}`;
-
-// Escape untrusted text (keys, bucket names, content types) before putting it in innerHTML.
-const esc = v => String(v).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const enc = encodeURIComponent;
+const objUrl = (bucket, key) => `${api()}/buckets/${enc(bucket)}/objects/${encKey(key)}`;
+const hrefTo = (bucket, prefix = "") => "#/" + [bucket, ...prefix.split("/").filter(Boolean)].map(enc).join("/");
 
 async function req(path, opts) {
   let r;
   try { r = await fetch(api() + path, opts); }
   catch (e) {
-    // fetch rejects only on network failure or a CORS block, never on an HTTP error status.
-    const err = new Error(`${e.message} (${api()}). Check the API is running and CORS allows this origin.`);
-    err.network = true;
-    throw err;
+    const err = new Error(`Cannot reach the API at ${api()}. Check it is running and CORS allows this origin.`);
+    err.network = true; throw err;
   }
-  if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
-  const ct = r.headers.get("content-type") || "";
-  return ct.includes("json") ? r.json() : r.text();
+  if (!r.ok) {
+    let text = await r.text(), msg = text.slice(0, 200);
+    try { const d = JSON.parse(text).detail; msg = typeof d === "string" ? d : JSON.stringify(d).slice(0, 200); } catch {}
+    const err = new Error(msg); err.status = r.status; throw err;
+  }
+  if (r.status === 204) return null;   // DELETE: no body
+  return (r.headers.get("content-type") || "").includes("json") ? r.json() : r.text();
 }
 
 function fmtBytes(n) {
@@ -100,70 +289,463 @@ function fmtBytes(n) {
   if (n < 1048576) return (n / 1024).toFixed(1) + " KB";
   return (n / 1048576).toFixed(1) + " MB";
 }
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const baseName = k => k.split("/").filter(Boolean).pop() || k;
+
+function fmtDay(iso) {
+  const d = new Date(iso), t = new Date(), y = new Date(); y.setDate(t.getDate() - 1);
+  if (d.toDateString() === t.toDateString()) return "Today";
+  if (d.toDateString() === y.toDateString()) return "Yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+}
+
+let toastTimer;
+function toast(text, { err = false, sticky = false } = {}) {
+  const t = $("toast"); t.textContent = text; t.className = "toast show" + (err ? " err" : "");
+  clearTimeout(toastTimer);
+  if (!sticky) toastTimer = setTimeout(() => t.classList.remove("show"), err ? 9000 : 4500);
+}
+
+// Run fn over arr with at most n in flight; returns the errors.
+async function pool(n, arr, fn) {
+  let i = 0; const errs = [];
+  await Promise.all(Array.from({ length: Math.min(n, arr.length) }, async () => {
+    while (i < arr.length) { const x = arr[i++]; try { await fn(x); } catch (e) { errs.push({ x, e }); } }
+  }));
+  return errs;
+}
+
+/* ===================== modal prompt / confirm ===================== */
+function ask({ title, message = "", label = null, value = "", placeholder = "", confirm = "OK", danger = false, hint = null, validate = null }) {
+  return new Promise(resolve => {
+    const dlg = $("modal"), inp = $("modalInput"), hasInput = label != null;
+    $("modalTitle").textContent = title; $("modalMsg").textContent = message; $("modalMsg").hidden = !message;
+    $("modalLabel").textContent = label || ""; inp.hidden = !hasInput; inp.value = value; inp.placeholder = placeholder;
+    $("modalErr").textContent = "";
+    const ok = $("modalOk"); ok.textContent = confirm; ok.className = "btn " + (danger ? "danger" : "primary");
+    const upd = () => { $("modalHint").textContent = hint ? hint(inp.value) : ""; };
+    inp.oninput = () => { $("modalErr").textContent = ""; upd(); }; upd();
+    $("modalForm").onsubmit = ev => {
+      ev.preventDefault();
+      if (hasInput && validate) { const e = validate(inp.value); if (e) { $("modalErr").textContent = e; inp.focus(); return; } }
+      dlg.close("ok");
+    };
+    $("modalCancel").onclick = () => dlg.close("cancel");
+    dlg.onclose = () => resolve(dlg.returnValue === "ok" ? (hasInput ? inp.value : true) : null);
+    dlg.returnValue = ""; dlg.showModal();
+    (hasInput ? inp : $("modalCancel")).focus();
+  });
+}
+
+/* ===================== state ===================== */
+const S = {
+  buckets: [],            // [{id,name,created_at}]
+  meta: new Map(),        // bucket -> {items, has_more} preview for album cards
+  bucket: null,           // open album
+  prefix: "",             // current folder inside it, "" or "a/b/"
+  items: [],              // every object in the open album, newest first
+  truncated: false,
+  loaded: false,
+  q: "",
+  view: { folders: [], files: [] },
+};
+
+const isReal = o => { const n = baseName(o.key); return n && n !== KEEP; };
+const isPhoto = o => DISPLAYABLE.test(o.content_type);
+
+function listing(prefix) {
+  const folders = new Map(), files = [];
+  for (const o of S.items) {
+    if (!o.key.startsWith(prefix)) continue;
+    const rest = o.key.slice(prefix.length), i = rest.indexOf("/");
+    if (i < 0) { if (isReal(o)) files.push(o); continue; }
+    const name = rest.slice(0, i);
+    if (!name) continue;
+    let f = folders.get(name);
+    if (!f) folders.set(name, f = { name, count: 0, cover: null });
+    if (isReal(o)) { f.count++; if (!f.cover && isPhoto(o)) f.cover = o; }   // items are newest-first
+  }
+  return { folders: [...folders.values()].sort((a, b) => a.name.localeCompare(b.name)), files };
+}
+
+/* ===================== data loading ===================== */
+async function fetchAll(bucket) {
+  const items = []; let offset = 0, more = false;
+  for (let p = 0; p < MAX_PAGES; p++) {
+    const page = await req(`/buckets/${enc(bucket)}/objects?limit=${PAGE}&offset=${offset}`);
+    items.push(...page.items); more = page.has_more;
+    if (!more) break;
+    offset += page.limit;
+  }
+  return { items, truncated: more };
+}
 
 async function loadBuckets() {
+  S.buckets = await req("/buckets");
+  renderSidebar();
+}
+
+async function reloadAlbum() {
+  const b = S.bucket; if (!b) return;
+  const { items, truncated } = await fetchAll(b);
+  if (S.bucket !== b) return;
+  S.items = items; S.truncated = truncated; S.loaded = true;
+  S.meta.set(b, { items: items.slice(0, CARD_PROBE), has_more: truncated || items.length > CARD_PROBE });
+  renderAlbum();
+}
+
+/* ===================== routing ===================== */
+function parseHash() {
+  const segs = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean).map(decodeURIComponent);
+  return { bucket: segs[0] || null, prefix: segs.length > 1 ? segs.slice(1).join("/") + "/" : "" };
+}
+
+let routeTok = 0;
+async function route() {
+  const tok = ++routeTok, r = parseHash();
+  $("side").classList.remove("open"); $("menuBtn").setAttribute("aria-expanded", "false");
+  S.prefix = r.prefix;
+
+  if (!r.bucket) {
+    S.bucket = null; S.q = ""; $("q").value = ""; $("q").disabled = true;
+    document.title = "Eidolon Photos";
+    renderSidebar(); renderHome();
+    await Promise.allSettled(S.buckets.map(async b => {
+      if (!S.meta.has(b.name)) S.meta.set(b.name, await req(`/buckets/${enc(b.name)}/objects?limit=${CARD_PROBE}`));
+    }));
+    if (tok === routeTok) renderHome();
+    return;
+  }
+
+  if (S.bucket !== r.bucket || !S.loaded) {
+    S.bucket = r.bucket; S.items = []; S.loaded = false; S.q = ""; $("q").value = ""; $("q").disabled = true;
+    renderSidebar(); renderMessage("Loading…");
+    try {
+      const { items, truncated } = await fetchAll(r.bucket);
+      if (tok !== routeTok) return;
+      S.items = items; S.truncated = truncated; S.loaded = true;
+      S.meta.set(r.bucket, { items: items.slice(0, CARD_PROBE), has_more: truncated || items.length > CARD_PROBE });
+    } catch (e) {
+      if (tok !== routeTok) return;
+      S.bucket = null;
+      renderMessage(e.status === 404 ? `Album "${r.bucket}" does not exist.` : e.message, true);
+      return;
+    }
+  }
+  $("q").disabled = false;
+  document.title = `${r.prefix ? baseName(r.prefix) + " · " : ""}${r.bucket} · Eidolon Photos`;
+  renderSidebar(); renderAlbum();
+  $("main").focus({ preventScroll: true });
+}
+
+/* ===================== rendering ===================== */
+function renderSidebar() {
+  $("navHome").toggleAttribute("aria-current", !S.bucket);
+  if (!S.bucket) $("navHome").setAttribute("aria-current", "page"); else $("navHome").removeAttribute("aria-current");
+  $("albumSep").hidden = !S.buckets.length;
+  $("albumNav").replaceChildren(...S.buckets.map(b =>
+    h("a", { class: "nav", href: hrefTo(b.name), "aria-current": b.name === S.bucket ? "page" : null },
+      icon("folder"), h("span", { class: "label" }, b.name))));
+}
+
+function renderMessage(text, isErr = false) {
+  const body = isErr
+    ? h("div", { class: "error", role: "alert" }, text, " ", h("button", { class: "btn", onclick: init }, "Retry"))
+    : h("p", { class: "sub" }, text);
+  $("main").replaceChildren(body);
+}
+
+function coverOf(items) { return items.find(o => isReal(o) && isPhoto(o)); }
+
+function renderHome() {
+  const main = $("main");
+  const head = h("div", { class: "head" },
+    h("h1", { style: "margin:0;font-weight:400;font-size:1.4rem" }, "Albums"),
+    h("div", { class: "actions" }, h("button", { class: "btn primary", onclick: newAlbum }, icon("add"), "New album")));
+
+  if (!S.buckets.length) {
+    main.replaceChildren(head, h("div", { class: "empty" }, icon("album"),
+      h("p", {}, "No albums yet. Each album is its own bucket."),
+      h("button", { class: "btn primary", onclick: newAlbum }, icon("add"), "Create your first album")));
+    return;
+  }
+  const cards = S.buckets.map(b => {
+    const m = S.meta.get(b.name), cover = m && coverOf(m.items);
+    const n = m ? m.items.filter(isReal).length : null;
+    const count = n == null ? "…" : plural(n, "item") .replace(/^(\d+)/, `$1${m.has_more ? "+" : ""}`);
+    return h("div", { class: "card" },
+      h("a", { href: hrefTo(b.name), "aria-label": `Open album ${b.name}` },
+        h("div", { class: "cover" }, cover ? h("img", { src: objUrl(b.name, cover.key), alt: "", loading: "lazy", decoding: "async" }) : icon("album")),
+        h("div", { class: "meta" }, h("b", {}, b.name), h("small", {}, count))));
+  });
+  main.replaceChildren(head, h("div", { class: "cards" }, cards));
+}
+
+function renderAlbum() {
+  const main = $("main"), q = S.q.trim().toLowerCase(), searching = q.length > 0;
+  const view = searching
+    ? { folders: [], files: S.items.filter(o => isReal(o) && o.key.toLowerCase().includes(q)) }
+    : listing(S.prefix);
+  S.view = view;
+
+  // breadcrumbs
+  const segs = S.prefix.split("/").filter(Boolean);
+  const crumbs = [h("a", { href: "#/" }, "Albums")];
+  const trail = [{ label: S.bucket, prefix: "" }, ...segs.map((s, i) => ({ label: s, prefix: segs.slice(0, i + 1).join("/") + "/" }))];
+  trail.forEach((t, i) => {
+    crumbs.push(h("span", { class: "sep", "aria-hidden": "true" }, "›"));
+    crumbs.push(i === trail.length - 1 && !searching
+      ? h("span", { "aria-current": "page" }, t.label)
+      : h("a", { href: hrefTo(S.bucket, t.prefix) }, t.label));
+  });
+  if (searching) { crumbs.push(h("span", { class: "sep", "aria-hidden": "true" }, "›"), h("span", { "aria-current": "page" }, `Search “${S.q.trim()}”`)); }
+
+  const actions = h("div", { class: "actions" },
+    h("button", { class: "btn primary", onclick: () => $("pickFiles").click() }, icon("upload"), "Upload photos"),
+    h("button", { class: "btn", onclick: () => $("pickDir").click() }, icon("folder"), "Upload folder"),
+    h("button", { class: "btn", onclick: newFolder }, icon("newfolder"), "New folder"),
+    !S.prefix ? h("button", { class: "btn ghost-danger", onclick: deleteAlbum }, icon("delete"), "Delete album") : null);
+
+  const parts = [h("div", { class: "head" }, h("nav", { class: "crumbs", "aria-label": "Breadcrumb" }, crumbs), actions)];
+  if (S.truncated) parts.push(h("p", { class: "error" }, `Only the newest ${MAX_PAGES * PAGE} objects are loaded; older ones are not shown.`));
+
+  if (view.folders.length) {
+    parts.push(h("h2", {}, "Folders"));
+    parts.push(h("div", { class: "folders" }, view.folders.map(f => {
+      const full = S.prefix + f.name + "/";
+      return h("div", { class: "folder" },
+        h("a", { href: hrefTo(S.bucket, full), "aria-label": `Open folder ${f.name}, ${plural(f.count, "item")}` },
+          h("div", { class: "cover" }, f.cover ? h("img", { src: objUrl(S.bucket, f.cover.key), alt: "", loading: "lazy", decoding: "async" }) : icon("folder")),
+          h("div", { class: "meta" }, icon("folder"), h("div", {}, h("b", {}, f.name), h("small", {}, plural(f.count, "item"))))),
+        h("button", { class: "icon-btn del", "aria-label": `Delete folder ${f.name}`, onclick: () => deleteFolder(full) }, icon("delete")));
+    })));
+  }
+
+  if (view.files.length) {
+    if (view.folders.length) parts.push(h("h2", {}, "Photos"));
+    const groups = new Map();
+    view.files.forEach((o, i) => { const k = new Date(o.created_at).toDateString(); if (!groups.has(k)) groups.set(k, []); groups.get(k).push({ o, i }); });
+    for (const list of groups.values()) {
+      parts.push(h("h2", {}, fmtDay(list[0].o.created_at)));
+      parts.push(h("div", { class: "grid" }, list.map(({ o, i }) => tile(o, i, searching))));
+    }
+  } else if (!view.folders.length) {
+    parts.push(h("div", { class: "empty" }, icon("album"),
+      h("p", {}, searching ? "No photos match your search." : "Nothing here yet. Drag photos or folders onto this page, or:"),
+      searching ? null : h("button", { class: "btn primary", onclick: () => $("pickFiles").click() }, icon("upload"), "Upload photos")));
+  }
+  main.replaceChildren(...parts);
+}
+
+function tile(o, i, showPath) {
+  const name = showPath ? o.key : baseName(o.key);
+  if (isPhoto(o)) {
+    return h("button", { class: "tile", "aria-label": `View ${name}`, onclick: () => openLB(i) },
+      h("img", { src: objUrl(S.bucket, o.key), alt: name, loading: "lazy", decoding: "async",
+                 onerror: ev => { const b = ev.target.closest("button"); b.className = "tile file"; b.replaceChildren(icon("file"), h("span", {}, name)); } }));
+  }
+  return h("button", { class: "tile file", "aria-label": `Open ${name}`, onclick: () => openLB(i) }, icon("file"), h("span", {}, name));
+}
+
+/* ===================== album / folder actions ===================== */
+const slugify = s => s.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^[^a-z0-9]+/, "").replace(/-+$/, "").slice(0, 63);
+
+async function newAlbum() {
+  const v = await ask({
+    title: "New album", label: "Album name", placeholder: "Holiday 2026", confirm: "Create",
+    hint: s => slugify(s) ? `Bucket name: ${slugify(s)}` : "Use letters or numbers.",
+    validate: s => slugify(s) ? null : "Please enter a name using letters or numbers.",
+  });
+  if (v == null) return;
+  const name = slugify(v);
   try {
-    const bs = await req("/buckets");
-    $("bucket").innerHTML = bs.map(b => `<option value="${esc(b.name)}">${esc(b.name)}</option>`).join("");
-    await loadObjects();
-  } catch (e) { msg((e.network ? "Cannot reach the API: " : "Load failed: ") + e.message); }
+    await req("/buckets", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+    await loadBuckets();
+    location.hash = hrefTo(name);
+  } catch (e) { toast(e.status === 409 ? `An album named "${name}" already exists.` : "Could not create album: " + e.message, { err: true }); }
 }
 
-async function loadObjects() {
-  const b = $("bucket").value;
-  if (!b) return;
+async function deleteAlbum() {
+  const b = S.bucket, n = S.items.filter(isReal).length;
+  const ok = n === 0
+    ? await ask({ title: `Delete album “${b}”?`, message: "This album is empty.", confirm: "Delete", danger: true })
+    : await ask({ title: `Delete album “${b}”?`, danger: true, confirm: "Delete forever",
+        message: `This permanently deletes the bucket and ${plural(n, "item")} in it. This cannot be undone.`,
+        label: `Type "${b}" to confirm`, placeholder: b, validate: s => s.trim() === b ? null : "The name does not match." });
+  if (ok == null) return;
   try {
-    const page = await req(`/buckets/${encodeURIComponent(b)}/objects?limit=1000`);
-    const os = page.items;
-    if (page.has_more) msg("Showing the newest 1000 objects only.");
-    $("objects").innerHTML = os.map((o, i) => `
-      <tr>
-        <td>${esc(o.key)}</td>
-        <td>${fmtBytes(o.size_bytes)}</td>
-        <td>${esc(o.content_type)}</td>
-        <td>${new Date(o.created_at).toLocaleString()}</td>
-        <td><a onclick="fetchObject(${i})">view</a></td>
-      </tr>`).join("") || "<tr><td colspan=5>No objects yet</td></tr>";
-    $("objects")._data = os;
-  } catch (e) { msg("Load failed: " + e.message); }
+    await req(`/buckets/${enc(b)}?force=true`, { method: "DELETE" });
+    S.meta.delete(b); S.bucket = null; S.loaded = false;
+    await loadBuckets();
+    toast(`Deleted album "${b}".`);
+    location.hash = "#/";
+  } catch (e) { toast("Delete failed: " + e.message, { err: true }); }
 }
 
-async function upload() {
-  const f = $("file").files[0];
-  if (!f) { msg("Pick a file first."); return; }
-  const bucketName = $("bucket").value;
-  if (!bucketName) { msg("Select a bucket first."); return; }
-  const key = $("key").value.trim() || f.name;
-  $("uploadBtn").disabled = true;
+async function newFolder() {
+  const names = new Set(listing(S.prefix).folders.map(f => f.name));
+  const v = await ask({
+    title: "New folder", label: "Folder name", placeholder: "Portraits", confirm: "Create",
+    message: S.prefix ? `Inside ${S.bucket}/${S.prefix}` : `Inside ${S.bucket}`,
+    validate: s => {
+      s = s.trim();
+      if (!s) return "Please enter a name.";
+      if (s.includes("/") || s.includes("\\")) return "Folder names cannot contain slashes.";
+      if (/[\x00-\x1f]/.test(s)) return "Folder names cannot contain control characters.";
+      if (s === "." || s === ".." || s === KEEP) return "That name is reserved.";
+      if (names.has(s)) return "A folder with that name already exists.";
+      if ((S.prefix + s + "/" + KEEP).length > 1024) return "That name is too long.";
+      return null;
+    },
+  });
+  if (v == null) return;
+  const key = S.prefix + v.trim() + "/" + KEEP;
   try {
-    // Raw bytes as the request body: no base64, no JSON wrapper.
-    const out = await req(`/buckets/${encodeURIComponent(bucketName)}/objects/${encKey(key)}`, {
-      method: "PUT",
-      headers: { "Content-Type": f.type || "application/octet-stream" },
-      body: f
-    });
-    msg(`Stored "${key}" (${fmtBytes(out.size_bytes)})`, true);
-    $("key").value = "";
-    await loadObjects();
-  } catch (e) { msg("Upload failed: " + e.message); }
-  $("uploadBtn").disabled = false;
+    // An object is the only thing the API can persist, so an empty folder is a zero-byte marker object.
+    await req(`/buckets/${enc(S.bucket)}/objects/${encKey(key)}`, { method: "PUT", headers: { "Content-Type": "application/octet-stream" }, body: new Blob([]) });
+    await reloadAlbum();
+    toast(`Created folder "${v.trim()}".`);
+  } catch (e) { toast("Could not create folder: " + e.message, { err: true }); }
 }
 
-function fetchObject(i) {
-  const o = $("objects")._data[i];
-  // The API streams the raw bytes with the right Content-Type, so the URL can be used directly.
-  // Non-image types (and SVG) are served as attachments, so the link downloads instead of rendering.
-  const url = objUrl($("bucket").value, o.key);
-  const fname = esc(o.key.split("/").pop());
-  $("preview").style.display = "";
-  $("previewLabel").textContent = o.key;
-  $("previewBody").innerHTML = o.content_type.startsWith("image/") && o.content_type !== "image/svg+xml"
-    ? `<img src="${esc(url)}" alt="${fname}" /> <a href="${esc(url)}" download="${fname}">download</a>`
-    : `<a href="${esc(url)}" download="${fname}">download (${fmtBytes(o.size_bytes)})</a>`;
-  msg(`Showing ${fmtBytes(o.size_bytes)} from store`, true);
+async function deleteFolder(full) {
+  const objs = S.items.filter(o => o.key.startsWith(full)), n = objs.filter(isReal).length;
+  const ok = await ask({ title: `Delete folder “${baseName(full)}”?`, danger: true, confirm: "Delete",
+    message: `This permanently deletes ${plural(n, "item")} and everything in its subfolders. This cannot be undone.` });
+  if (!ok) return;
+  const b = S.bucket; let done = 0;
+  const errs = await pool(4, objs, async o => {
+    await req(`/buckets/${enc(b)}/objects/${encKey(o.key)}`, { method: "DELETE" });
+    toast(`Deleting… ${++done} of ${objs.length}`, { sticky: true });
+  });
+  if (S.bucket === b) await reloadAlbum().catch(() => {});
+  errs.length ? toast(`Deleted ${done}; ${errs.length} failed.\n${errs[0].e.message}`, { err: true }) : toast(`Deleted folder "${baseName(full)}".`);
 }
 
-loadBuckets();
+/* ===================== upload ===================== */
+const typeOf = f => f.type || EXT_TYPES[(f.name.split(".").pop() || "").toLowerCase()] || "";
+const isImageFile = f => typeOf(f).startsWith("image/");
+
+async function uploadFiles(list) {
+  if (!S.bucket || !S.loaded) { toast("Open an album first, then upload into it."); return; }
+  const accepted = list.filter(it => isImageFile(it.file)), skipped = list.length - accepted.length;
+  if (!accepted.length) { toast(skipped ? `No images found (${plural(skipped, "file")} skipped).` : "Nothing to upload."); return; }
+
+  const bucket = S.bucket, prefix = S.prefix;
+  const jobs = accepted.map(it => ({ file: it.file, key: prefix + it.rel }));
+  const tooLong = jobs.find(j => j.key.length > 1024);
+  if (tooLong) { toast(`Path too long: ${tooLong.key.slice(0, 80)}…`, { err: true }); return; }
+
+  const existing = new Set(S.items.map(o => o.key)), clashes = jobs.filter(j => existing.has(j.key)).length;
+  if (clashes && !await ask({ title: "Replace existing photos?", danger: true, confirm: "Replace",
+        message: `${plural(clashes, "file")} already exist here with the same name and will be overwritten.` })) return;
+
+  let done = 0;
+  const errs = await pool(3, jobs, async j => {
+    try {
+      await req(`/buckets/${enc(bucket)}/objects/${encKey(j.key)}`, { method: "PUT", headers: { "Content-Type": typeOf(j.file) }, body: j.file });
+    } catch (e) { e.message = `${j.file.name}: ${e.message}`; throw e; }
+    finally { toast(`Uploading ${++done} of ${jobs.length}…`, { sticky: true }); }
+  });
+
+  if (S.bucket === bucket) await reloadAlbum().catch(() => {});
+  const ok = jobs.length - errs.length;
+  let msg = `Uploaded ${plural(ok, "photo")}.`;
+  if (skipped) msg += ` Skipped ${plural(skipped, "non-image file")}.`;
+  if (errs.length) msg += `\n${errs.length} failed: ${errs.slice(0, 3).map(x => x.e.message).join("; ")}`;
+  toast(msg, { err: errs.length > 0 });
+}
+
+$("pickFiles").addEventListener("change", e => { uploadFiles([...e.target.files].map(f => ({ file: f, rel: f.name }))); e.target.value = ""; });
+$("pickDir").addEventListener("change", e => { uploadFiles([...e.target.files].map(f => ({ file: f, rel: f.webkitRelativePath || f.name }))); e.target.value = ""; });
+
+// Drag and drop (files and whole folders)
+let dragDepth = 0;
+const hasFiles = e => [...(e.dataTransfer?.types || [])].includes("Files");
+window.addEventListener("dragenter", e => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; $("dropOverlay").hidden = !S.bucket; });
+window.addEventListener("dragover", e => { if (hasFiles(e)) e.preventDefault(); });
+window.addEventListener("dragleave", e => { if (hasFiles(e) && --dragDepth <= 0) { dragDepth = 0; $("dropOverlay").hidden = true; } });
+window.addEventListener("drop", async e => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); dragDepth = 0; $("dropOverlay").hidden = true;
+  if (!S.bucket) { toast("Open an album first, then drop photos into it."); return; }
+  // Entries must be grabbed synchronously, before the first await.
+  const entries = [...e.dataTransfer.items].map(i => i.webkitGetAsEntry?.()).filter(Boolean);
+  const out = [];
+  const walk = async (ent, path) => {
+    if (ent.isFile) { const file = await new Promise((res, rej) => ent.file(res, rej)); out.push({ file, rel: path + ent.name }); }
+    else if (ent.isDirectory) {
+      const rd = ent.createReader();
+      for (;;) {                                   // readEntries returns batches until empty
+        const batch = await new Promise((res, rej) => rd.readEntries(res, rej));
+        if (!batch.length) break;
+        for (const c of batch) await walk(c, path + ent.name + "/");
+      }
+    }
+  };
+  try { for (const ent of entries) await walk(ent, ""); }
+  catch (err) { toast("Could not read the dropped items: " + err.message, { err: true }); return; }
+  uploadFiles(out);
+});
+
+/* ===================== lightbox ===================== */
+let lbIdx = 0;
+function openLB(i) { lbIdx = i; showLB(); if (!$("lb").open) $("lb").showModal(); }
+
+function showLB() {
+  const files = S.view.files, o = files[lbIdx]; if (!o) { $("lb").close(); return; }
+  const url = objUrl(S.bucket, o.key), name = baseName(o.key);
+  $("lbStage").replaceChildren(isPhoto(o)
+    ? h("img", { src: url, alt: name })
+    : h("div", { class: "nofile" }, icon("file"), h("div", {}, name), h("small", {}, "No preview available")));
+  $("lbTitle").textContent = name;
+  const dl = $("lbDownload"); dl.href = url; dl.setAttribute("download", name);
+  $("lbPrev").hidden = lbIdx <= 0; $("lbNext").hidden = lbIdx >= files.length - 1;
+  const row = (k, v) => [h("dt", {}, k), h("dd", {}, v)];
+  $("lbInfo").replaceChildren(h("h3", {}, "Details"), h("dl", {},
+    row("Key", o.key), row("Album", S.bucket), row("Size", fmtBytes(o.size_bytes)), row("Type", o.content_type),
+    row("Uploaded", new Date(o.created_at).toLocaleString()), row("SHA-256", o.checksum_sha256 || "—")));
+}
+
+const lbStep = d => { const n = lbIdx + d; if (n >= 0 && n < S.view.files.length) { lbIdx = n; showLB(); } };
+$("lbPrev").onclick = () => lbStep(-1);
+$("lbNext").onclick = () => lbStep(1);
+$("lbClose").onclick = () => $("lb").close();
+$("lbInfoBtn").onclick = () => {
+  const open = $("lbInfo").hidden;
+  $("lbInfo").hidden = !open; $("lb").toggleAttribute("data-info", open); $("lbInfoBtn").setAttribute("aria-expanded", String(open));
+};
+$("lb").addEventListener("keydown", e => {
+  if (e.key === "ArrowLeft") { lbStep(-1); e.preventDefault(); }
+  else if (e.key === "ArrowRight") { lbStep(1); e.preventDefault(); }
+});
+$("lbDelete").onclick = async () => {
+  const o = S.view.files[lbIdx]; if (!o) return;
+  const ok = await ask({ title: "Delete this photo?", message: `“${baseName(o.key)}” will be permanently deleted.`, confirm: "Delete", danger: true });
+  if (!ok) return;
+  try {
+    await req(`/buckets/${enc(S.bucket)}/objects/${encKey(o.key)}`, { method: "DELETE" });
+    const keep = lbIdx;
+    await reloadAlbum();
+    if (S.view.files.length) { lbIdx = Math.min(keep, S.view.files.length - 1); showLB(); } else $("lb").close();
+    toast("Photo deleted.");
+  } catch (e) { toast("Delete failed: " + e.message, { err: true }); }
+};
+
+/* ===================== chrome wiring ===================== */
+document.querySelectorAll("[data-icon]").forEach(el => el.replaceChildren(icon(el.dataset.icon)));
+$("menuBtn").onclick = () => { const o = $("side").classList.toggle("open"); $("menuBtn").setAttribute("aria-expanded", String(o)); };
+$("newAlbumSide").onclick = newAlbum;
+$("q").addEventListener("input", e => { S.q = e.target.value; if (S.bucket && S.loaded) renderAlbum(); });
+$("apiBase").addEventListener("change", () => { localStorage.setItem("eidolon.api", $("apiBase").value.trim()); S.meta.clear(); S.bucket = null; S.loaded = false; init(); });
+window.addEventListener("hashchange", route);
+
+async function init() {
+  renderMessage("Loading…");
+  try { await loadBuckets(); } catch (e) { renderSidebar(); renderMessage(e.message, true); return; }
+  route();
+}
+init();
 </script>
 </body>
 </html>
